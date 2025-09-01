@@ -17,4 +17,5 @@ proj: false
 rep: 1
 sigma: 3
 sim: 50
+noise_type : homo
 simname: 250612Exp_2

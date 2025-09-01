@@ -43,6 +43,7 @@ def summarize_scalar_trace(run_root, funcname="best_L"):
     lengths = [len(a) for a in series]
     max_T   = max(lengths)
     avg_T   = np.mean(lengths)
+    var_T   = np.var(lengths)
     S = len(series)
     
     M = np.zeros((S, max_T), dtype=series[0].dtype)
@@ -61,7 +62,8 @@ def summarize_scalar_trace(run_root, funcname="best_L"):
     std  = M.std(axis=0, ddof=0)   # (T,)
 
     return {
-        "iters": int(avg_T),
+        "iters": avg_T,
+        "iters_var": var_T,
         "n_sims": int(S),
         "mean": mean,
         "var": var,
