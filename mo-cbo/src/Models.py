@@ -270,8 +270,20 @@ class Multi_CBO_model(_BaseCBO):
         lapX = Psi @ X - row_sum * X  # (N,d), 그래프 라플라시안 형태
 
         drift = self.lam * lapX * self.dt
-        diffu = self.sigma * lapX * (np.random.randn(N, d)) * sqrtdt
+                # ---- noise 생성 (동질/이질 선택) ----
+        if self.noise_type == "homo":
+            # 한 타임스텝에 d-차원 잡음 벡터 하나 생성 → 모든 파티클에 공유
+            eps = np.random.randn(1, d)       # (1, d), broadcasting → (N, d)
+        else:
+            # 파티클별 독립 잡음
+            eps = np.random.randn(N, d)       # (N, d)
 
+        # sigma는 scalar 또는 (d,) 모두 호환되게 브로드캐스트
+        sigma = np.asarray(self.sigma)
+
+        # multiplicative diffusion (기존 정책 유지: center * noise)
+        diffu = sigma * lapX * eps * sqrtdt # (N, d)
+        
         Xnew = X + drift + diffu
 
         if self.proj:
@@ -359,7 +371,22 @@ class CBO_model(_BaseCBO):
         Xm, bmp = get_Xmbmp(X, L, self.beta)  # 한번만
         center = X - Xm
         drift  = -self.lam * center * self.dt
-        diffu  =  self.sigma * center * np.random.randn(N, d) * sqrtdt
+
+        
+        # ---- noise 생성 (동질/이질 선택) ----
+        if self.noise_type == "homo":
+            # 한 타임스텝에 d-차원 잡음 벡터 하나 생성 → 모든 파티클에 공유
+            eps = np.random.randn(1, d)       # (1, d), broadcasting → (N, d)
+        else:
+            # 파티클별 독립 잡음
+            eps = np.random.randn(N, d)       # (N, d)
+
+        # sigma는 scalar 또는 (d,) 모두 호환되게 브로드캐스트
+        sigma = np.asarray(self.sigma)
+
+        # multiplicative diffusion (기존 정책 유지: center * noise)
+        diffu = sigma * center * eps * sqrtdt # (N, d)
+
 
         # 평균 드리프트 (Milstein 아님: Euler–Maruyama + 보조 항)
         X_avg = X.mean(axis=0)          # (d,)
