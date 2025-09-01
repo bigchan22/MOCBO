@@ -19,6 +19,7 @@ def summarize_scalar_trace(run_root, funcname="best_L"):
     """
     run_root = Path(run_root)
     series = []   # list of (T,)
+    # print(sorted(run_root.glob("sim*")))
     for sim_dir in sorted(run_root.glob("sim*")):
         files = _find_trace_files(sim_dir, funcname)
         if not files:
@@ -34,16 +35,33 @@ def summarize_scalar_trace(run_root, funcname="best_L"):
         raise FileNotFoundError(f"No {funcname}_*.pkl found under {run_root}/sim*/")
 
     # 길이가 다른 경우를 대비해 최소 T로 맞춤
-    min_T = min(len(a) for a in series)
+    # min_T = min(len(a) for a in series)
+    # S = len(series)
+    # M = np.stack([a[:min_T] for a in series], axis=0)  # (S, T)
+    
+    # 예시: series = [np.array([1,2,3]), np.array([4,5]), np.array([6])]
+    lengths = [len(a) for a in series]
+    max_T   = max(lengths)
+    avg_T   = np.mean(lengths)
     S = len(series)
-    M = np.stack([a[:min_T] for a in series], axis=0)  # (S, T)
+    
+    M = np.zeros((S, max_T), dtype=series[0].dtype)
+
+    
+    for i, a in enumerate(series):
+        L = len(a)
+        M[i, :L] = a
+        if L < max_T:
+            M[i, L:] = a[-1]  # 마지막 값으로 채우기
+    
+#    print(M)
 
     mean = M.mean(axis=0)          # (T,)
     var  = M.var(axis=0, ddof=0)   # (T,)
     std  = M.std(axis=0, ddof=0)   # (T,)
 
     return {
-        "iters": int(min_T),
+        "iters": int(avg_T),
         "n_sims": int(S),
         "mean": mean,
         "var": var,

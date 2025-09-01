@@ -176,6 +176,7 @@ class _BaseCBO:
         self.beta2  = config.get('beta2', 0.99)  # (미사용이면 제거 고려)
         self.avg    = config.get('avg', 0.0)
         self.simname = config['simname']
+        self.noise_type = config.get("noise_type", "homo")  # "homo" or "hetero"
         self.path    = os.path.join("results", self.simname)
         self.history = {}
 
@@ -205,13 +206,43 @@ class _BaseCBO:
             print("The new directory is created!")
 
     @staticmethod
-    def _project_simplex_rows(X):
-        # X: (N, d) 각 행을 심플렉스로 프로젝션 (단순 예시: 좌표-wise 음수 제거 후 1로 정규화)
-        # 실제 simplex_proj와 동일한 정책으로 일관화하세요.
-        X = np.maximum(X, 0.0)
-        s = X.sum(axis=1, keepdims=True)
-        s = np.where(s == 0.0, 1.0, s)
-        return X / s
+    def _project_simplex_rows(X, b=1.0):              
+        """
+        각 행을 유클리드 심플렉스 { y >= 0, sum(y)=b }에 사영.
+        Wang & Carreira-Perpiñán(2013) 알고리즘을 행 단위로 벡터화.
+    
+        Args:
+            X (array_like): (N, d) 입력 행렬
+            b (float): 심플렉스 반지름(기본 1.0, 양수)
+        Returns:
+            np.ndarray: (N, d) 사영 결과
+        """
+        X = np.asarray(X, dtype=float)
+        if b <= 0:
+            raise ValueError("b must be positive")
+        N, d = X.shape
+        if d == 0 or N == 0:
+            return X.copy()
+    
+        # 1) 각 행을 내림차순 정렬
+        U = np.sort(X, axis=1)[:, ::-1]         # (N, d)
+        CSSV = np.cumsum(U, axis=1)             # (N, d)
+        j = np.arange(1, d + 1)[None, :]        # (1, d)
+    
+        # 2) cond: u_j - (cssv_j - b)/(j) > 0  (여기서 j는 1..d)
+        cond = U - (CSSV - b) / j > 0           # (N, d), True..True, False..False의 단조 패턴
+        # 3) rho = 마지막으로 True인 위치
+        #    cond가 단조이므로 True의 개수 - 1 이 마지막 True의 인덱스
+        rho = cond.sum(axis=1) - 1              # (N,)
+    
+        # 4) theta = (sum_{i<=rho} u_i - b) / (rho + 1)
+        rows = np.arange(N)
+        theta = (CSSV[rows, rho] - b) / (rho + 1)  # (N,)
+    
+        # 5) y = max(x - theta, 0)
+        Y = np.maximum(X - theta[:, None], 0.0)
+        return Y
+
 
     @staticmethod
     def best_loss(x, L):
@@ -292,7 +323,22 @@ class CBO_model(_BaseCBO):
 
         center = X - Xm
         drift  = -self.lam * center * self.dt
-        diffu  =  self.sigma * center * np.random.randn(N, d) * sqrtdt
+        # ---- noise 생성 (동질/이질 선택) ----
+        if self.noise_type == "homo":
+            # 한 타임스텝에 d-차원 잡음 벡터 하나 생성 → 모든 파티클에 공유
+            eps = np.random.randn(1, d)       # (1, d), broadcasting → (N, d)
+        else:
+            # 파티클별 독립 잡음
+            eps = np.random.randn(N, d)       # (N, d)
+
+        # sigma는 scalar 또는 (d,) 모두 호환되게 브로드캐스트
+        sigma = np.asarray(self.sigma)
+
+        # multiplicative diffusion (기존 정책 유지: center * noise)
+        diffu = sigma * center * eps * sqrtdt # (N, d)
+
+        
+        # diffu  =  self.sigma * center * np.random.randn(N, d) * sqrtdt
 
         # "평균에 대한 추가 드리프트" (문헌마다 해석 다름)
         X_avg = X.mean(axis=0)          # (d,)
