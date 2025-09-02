@@ -9,7 +9,7 @@ gamma: 1
 lam: 1
 lam1: 0
 lam_m: 0.8
-maxiter: 1000
+maxiter: 5000
 model: 1
 momentum: false
 nump: 50
